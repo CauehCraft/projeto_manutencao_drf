@@ -50,6 +50,10 @@ class Notification(models.Model):
         verbose_name = 'Notificação'
         verbose_name_plural = 'Notificações'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient_email', 'subject', 'message', 'status'], 
+                        name='notif_dup_check_idx')
+        ]
     
     def __str__(self):
         return f"{self.subject} - {self.recipient_email} ({self.status})"
