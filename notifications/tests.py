@@ -49,6 +49,92 @@ class EmailServiceTest(TestCase):
         # Verifica se o email foi "enviado" (no backend de console)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject, 'Teste de Email')
+    
+    def test_prevent_duplicate_notification(self):
+        """Testa prevenção de notificações duplicadas"""
+        # Envia a primeira notificação
+        success1, notification1, error1 = EmailService.send_notification(
+            recipient_email='teste@example.com',
+            subject='Notificação Única',
+            message='Esta notificação não deve ser duplicada'
+        )
+        
+        self.assertTrue(success1)
+        self.assertEqual(notification1.status, 'sent')
+        
+        # Tenta enviar a mesma notificação novamente
+        success2, notification2, error2 = EmailService.send_notification(
+            recipient_email='teste@example.com',
+            subject='Notificação Única',
+            message='Esta notificação não deve ser duplicada'
+        )
+        
+        self.assertTrue(success2)
+        self.assertIsNone(error2)
+        # Deve retornar a mesma notificação (mesma ID)
+        self.assertEqual(notification1.id, notification2.id)
+        
+        # Verifica que apenas 1 notificação foi criada no banco
+        self.assertEqual(Notification.objects.count(), 1)
+        
+        # Verifica que apenas 1 email foi enviado
+        self.assertEqual(len(mail.outbox), 1)
+    
+    def test_allow_different_notifications(self):
+        """Testa que notificações diferentes são enviadas normalmente"""
+        # Envia primeira notificação
+        success1, notification1, error1 = EmailService.send_notification(
+            recipient_email='teste@example.com',
+            subject='Primeira Notificação',
+            message='Primeira mensagem'
+        )
+        
+        # Envia segunda notificação com conteúdo diferente
+        success2, notification2, error2 = EmailService.send_notification(
+            recipient_email='teste@example.com',
+            subject='Segunda Notificação',
+            message='Segunda mensagem'
+        )
+        
+        self.assertTrue(success1)
+        self.assertTrue(success2)
+        
+        # Devem ser notificações diferentes
+        self.assertNotEqual(notification1.id, notification2.id)
+        
+        # Verifica que 2 notificações foram criadas
+        self.assertEqual(Notification.objects.count(), 2)
+        
+        # Verifica que 2 emails foram enviados
+        self.assertEqual(len(mail.outbox), 2)
+    
+    def test_allow_same_message_different_recipients(self):
+        """Testa que a mesma mensagem pode ser enviada para destinatários diferentes"""
+        # Envia para primeiro destinatário
+        success1, notification1, error1 = EmailService.send_notification(
+            recipient_email='usuario1@example.com',
+            subject='Notificação',
+            message='Mesma mensagem'
+        )
+        
+        # Envia para segundo destinatário
+        success2, notification2, error2 = EmailService.send_notification(
+            recipient_email='usuario2@example.com',
+            subject='Notificação',
+            message='Mesma mensagem'
+        )
+        
+        self.assertTrue(success1)
+        self.assertTrue(success2)
+        
+        # Devem ser notificações diferentes
+        self.assertNotEqual(notification1.id, notification2.id)
+        
+        # Verifica que 2 notificações foram criadas
+        self.assertEqual(Notification.objects.count(), 2)
+        
+        # Verifica que 2 emails foram enviados
+        self.assertEqual(len(mail.outbox), 2)
 
 
 class NotificationAPITest(APITestCase):
@@ -324,3 +410,35 @@ class NotificationIntegrationTest(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject, 'Test Email')
         self.assertEqual(mail.outbox[0].to, ['test@example.com'])
+    
+    def test_api_prevent_duplicate_notifications(self):
+        """Testa que a API previne o envio de notificações duplicadas"""
+        data = {
+            'recipient_email': 'duplicate@example.com',
+            'subject': 'Test Duplicate',
+            'message': 'This should not be duplicated'
+        }
+        
+        # Limpar mailbox
+        mail.outbox = []
+        
+        # Primeiro envio
+        response1 = self.client.post('/api/notifications/send/', data, format='json')
+        self.assertEqual(response1.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response1.data['success'])
+        notification_id_1 = response1.data['notification']['id']
+        
+        # Segundo envio (duplicado)
+        response2 = self.client.post('/api/notifications/send/', data, format='json')
+        self.assertEqual(response2.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response2.data['success'])
+        notification_id_2 = response2.data['notification']['id']
+        
+        # Deve retornar a mesma notificação
+        self.assertEqual(notification_id_1, notification_id_2)
+        
+        # Apenas 1 notificação no banco
+        self.assertEqual(Notification.objects.count(), 1)
+        
+        # Apenas 1 email enviado
+        self.assertEqual(len(mail.outbox), 1)
