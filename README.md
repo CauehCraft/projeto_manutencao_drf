@@ -5,6 +5,7 @@ Sistema completo de notificações por email desenvolvido com Django REST Framew
 ## Funcionalidades
 
 - Envio de notificações por email
+- **Prevenção automática de notificações duplicadas** - garante que cada notificação seja enviada apenas uma vez para cada usuário
 - Histórico completo de notificações enviadas
 - Estatísticas de envio (taxa de sucesso, falhas, etc.)
 - Filtros por status de notificação
@@ -178,6 +179,53 @@ Resposta:
 ### 5. Deletar Notificação
 
 DELETE `/api/notifications/{id}/`
+
+## Prevenção de Notificações Duplicadas
+
+O sistema possui um mecanismo automático para evitar o envio de notificações duplicadas. Quando uma solicitação de envio é feita, o sistema verifica se já existe uma notificação idêntica que foi enviada com sucesso (status 'sent').
+
+### Como funciona:
+
+1. Antes de criar uma nova notificação, o sistema busca por notificações existentes com:
+   - Mesmo `recipient_email` (destinatário)
+   - Mesmo `subject` (assunto)
+   - Mesma `message` (mensagem)
+   - Status `sent` (enviada com sucesso)
+
+2. Se uma notificação idêntica for encontrada:
+   - O sistema **não cria** uma nova notificação
+   - O sistema **não envia** um novo email
+   - A notificação existente é retornada na resposta
+   - Um log informativo é registrado
+
+3. Se nenhuma notificação idêntica for encontrada:
+   - Uma nova notificação é criada e enviada normalmente
+
+### Exemplo:
+
+```bash
+# Primeira solicitação - cria notificação ID 1
+curl -X POST http://localhost:8000/api/notifications/send/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient_email": "usuario@example.com",
+    "subject": "Bem-vindo",
+    "message": "Bem-vindo ao sistema!"
+  }'
+# Resposta: {"id": 1, "status": "sent", ...}
+
+# Segunda solicitação idêntica - retorna notificação ID 1 (não envia novamente)
+curl -X POST http://localhost:8000/api/notifications/send/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient_email": "usuario@example.com",
+    "subject": "Bem-vindo",
+    "message": "Bem-vindo ao sistema!"
+  }'
+# Resposta: {"id": 1, "status": "sent", ...} (mesma ID)
+```
+
+Isso garante que os usuários não recebam notificações repetitivas, evitando spam e melhorando a experiência do usuário.
 
 ## Testando a API
 
